@@ -49,7 +49,7 @@ class ParticleField:
         
         # Audio-reactive parameters
         self.beat_hz = 10.0
-        self.carrier_hz = 512.0
+        self.carrier_hz = 200.0
         self.rms = 0.5
         
         # FPS tracking for dynamic particle scaling

@@ -95,22 +95,31 @@ class HUD:
         surface.blit(txt, txt.get_rect(center=(ox + cw // 2, self.height - 14)))
 
     def _render_freq_readout(self, surface, ox, state):
-        y = self.height - 100
+        y = self.height - 118
         carrier = state.get('carrier_hz', 0)
         beat = state.get('beat_hz', 0)
         mode = state.get('mode', 'binaural')
         iso = state.get('isochronic', False)
+        perception = state.get('perception', 'standard')
+        reverb = state.get('reverb_preset', 'off')
 
+        from toneflow.audio.osc import PERCEPTION_LABELS
+        parts = []
         if iso:
-            line = f"{carrier:.1f} Hz  ·  {beat:.2f} Hz beat  ·  Isochronic"
+            parts.append('Isochronic')
         elif mode == 'binaural':
-            lf = carrier - beat / 2
-            rf = carrier + beat / 2
-            line = f"L {lf:.1f}  R {rf:.1f}  ·  Δ {beat:.2f} Hz"
+            lf, rf = carrier - beat / 2, carrier + beat / 2
+            parts.append(f"L {lf:.0f}  R {rf:.0f} Hz")
         else:
-            line = f"{carrier:.1f} Hz  ·  {beat:.2f} Hz  ·  {mode.title()}"
+            parts.append(f"{carrier:.0f} Hz {mode}")
+        parts.append(f"Δ {beat:.1f} Hz")
+        if perception != 'standard':
+            parts.append(PERCEPTION_LABELS.get(perception, perception))
+        if reverb != 'off':
+            parts.append(f"Rev:{reverb}")
 
-        bg = pygame.Surface((420, 22), pygame.SRCALPHA)
+        line = "  ·  ".join(parts)
+        bg = pygame.Surface((min(self.canvas_w() - 24, 520), 22), pygame.SRCALPHA)
         bg.fill((0, 0, 0, 120))
         surface.blit(bg, (ox + 12, y))
         surface.blit(self.font_medium.render(line, True, self.text_color), (ox + 16, y + 2))

@@ -1,7 +1,5 @@
 #!/usr/bin/env python3
-"""
-ToneFlow - Hemi-Sync style binaural/isochronic beat experience.
-"""
+"""ToneFlow — Hemi-Sync perception studio."""
 
 import sys
 import pygame
@@ -11,7 +9,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from toneflow.audio.engine import AudioEngine
 from toneflow.audio.export_wav import export_wav
-from toneflow.presets.catalog import PRESETS, cycle_preset
+from toneflow.presets.catalog import PRESETS, get_preset_by_id
 from toneflow.ui.input import InputHandler
 from toneflow.ui.hud import HUD
 from toneflow.ui.control_panel import ControlPanel, PANEL_WIDTH
@@ -23,8 +21,6 @@ from toneflow.persist.history import SessionHistory
 
 
 class ToneFlowApp:
-    """Main ToneFlow application."""
-
     def __init__(self):
         self.width = 1280
         self.height = 720
@@ -33,9 +29,8 @@ class ToneFlowApp:
         pygame.mixer.pre_init(44100, -16, 2, 2048)
         pygame.init()
 
-        self.screen = pygame.display.set_mode(
-            (self.width, self.height), pygame.RESIZABLE)
-        pygame.display.set_caption("ToneFlow — Hemi-Sync Binaural Experience")
+        self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
+        pygame.display.set_caption("ToneFlow — Perception Studio")
 
         canvas_w = self.width - PANEL_WIDTH
         self.visualizer = Fallback2DVisualizer(canvas_w, self.height, n_particles=200)
@@ -59,39 +54,63 @@ class ToneFlowApp:
 
         self.current_preset = PRESETS[0]
         self.preset_index = 0
-        self.apply_preset(self.current_preset, 0)
+        self.apply_preset(self.current_preset)
 
-        self.reverb_enabled = False
+        self.reverb_preset = 'off'
         self.noise_enabled = False
         self.noise_type = 'pink'
         self.show_about = False
         self.show_safety = False
         self.session_active = False
         self.session_start_mood = None
-
         self.was_tuning = False
 
-        print("\nToneFlow ready.")
-        print("  Use the left panel to pick presets and toggle controls.")
-        print("  Hold Shift or Space + drag in the canvas to tune frequencies.")
-        print("  Headphones recommended for binaural mode.\n")
+        print("\nToneFlow — Perception Studio")
+        print("  Panel: pick presets, perception mode, reverb space")
+        print("  Shift/Space + drag canvas to tune frequencies\n")
 
-    def apply_preset(self, preset, index):
-        """Apply preset and reset audio mode flags from preset metadata."""
+    def apply_preset(self, preset):
         self.current_preset = preset
-        self.preset_index = index
+        for i, p in enumerate(PRESETS):
+            if p['id'] == preset['id']:
+                self.preset_index = i
+                break
 
         self.audio_engine.set_parameters(preset['carrier_hz'], preset['beat_hz'])
         self.audio_engine.set_mode(preset.get('mode', 'binaural'))
         self.audio_engine.isochronic_mode = preset.get('isochronic', False)
         self.audio_engine.harmonic_layers = preset.get('harmonic_layers', 1)
         self.audio_engine.harmonic_phases = [0.0, 0.0, 0.0]
+        self.audio_engine.set_perception_mode(preset.get('perception', 'standard'))
+        self._perception_state_reset()
+
+        rev = preset.get('reverb', 'off')
+        self.reverb_preset = rev
+        if rev != 'off':
+            self.audio_engine.effects.set_reverb(True, preset=rev)
+        else:
+            self.audio_engine.effects.set_reverb(False)
 
         self.input_handler.carrier_hz = preset['carrier_hz']
         self.input_handler.beat_hz = preset['beat_hz']
         self.audio_engine.snap_parameters()
-
         print(f"Preset: {preset['label']}")
+
+    def _perception_state_reset(self):
+        self.audio_engine._perception_state = {
+            'rotation_phase': 0.0, 'alt_phase': 0.0,
+            'shimmer_phase': 0.0, 'breath_phase': 0.0,
+        }
+
+    def _modal_blocks_input(self):
+        return (
+            (self.mood_dialog_pre and self.mood_dialog_pre.is_active)
+            or (self.mood_dialog_post and self.mood_dialog_post.is_active)
+            or (self.export_dialog and self.export_dialog.is_active)
+            or self.calibration_helper.is_active
+            or self.show_about
+            or self.show_safety
+        )
 
     def run(self):
         while self.running:
@@ -106,36 +125,40 @@ class ToneFlowApp:
                         self.session_start_mood = result
                         self.start_session()
                     handled = True
-
                 elif self.mood_dialog_post and self.mood_dialog_post.is_active:
                     result = self.mood_dialog_post.handle_event(event)
                     if result is not None:
                         self.end_session(result)
                     handled = True
-
                 elif self.export_dialog and self.export_dialog.is_active:
                     result = self.export_dialog.handle_event(event)
                     if result is not None and result > 0:
                         self.do_export(result)
                     handled = True
-
                 elif self.calibration_helper.is_active:
-                    cal_result = self.calibration_helper.handle_event(event)
-                    if cal_result == 'done':
-                        print("Calibration complete")
-                    elif cal_result == 'cancel':
-                        print("Calibration cancelled")
+                    self.calibration_helper.handle_event(event)
+                    handled = True
+                elif self.show_about:
+                    if self.about_overlay.handle_event(event):
+                        self.show_about = False
+                    handled = True
+                elif self.show_safety:
+                    if self.safety_overlay.handle_event(event):
+                        self.show_safety = False
                     handled = True
 
                 if not handled:
-                    consumed, panel_action = self.control_panel.handle_event(
-                        event, self.width)
+                    consumed, panel_action = self.control_panel.handle_event(event, self.width)
                     if panel_action:
                         self.handle_action(panel_action)
-
                     if not consumed:
-                        action = self.input_handler.handle_event(event)
-                        self.handle_action(action)
+                        skip_esc = (
+                            event.type == pygame.KEYDOWN
+                            and event.key == pygame.K_ESCAPE
+                            and self._modal_blocks_input()
+                        )
+                        if not skip_esc:
+                            self.handle_action(self.input_handler.handle_event(event))
 
             self.audio_engine.update(dt)
 
@@ -144,18 +167,15 @@ class ToneFlowApp:
             self.was_tuning = self.input_handler.is_tuning()
 
             if not self.session_active and self.input_handler.is_tuning():
-                carrier, beat = self.input_handler.get_parameters()
-                self.audio_engine.set_parameters(carrier, beat)
+                c, b = self.input_handler.get_parameters()
+                self.audio_engine.set_parameters(c, b)
 
             self.visualizer.update(
-                dt,
-                self.audio_engine.beat_hz,
-                self.audio_engine.carrier_hz,
+                dt, self.audio_engine.beat_hz, self.audio_engine.carrier_hz,
                 self.audio_engine.current_rms,
                 brainwave_state=self.audio_engine.get_brainwave_state(),
                 isochronic=self.audio_engine.isochronic_mode,
             )
-
             self.render()
             pygame.display.flip()
 
@@ -169,28 +189,24 @@ class ToneFlowApp:
         if action.get('quit'):
             self.running = False
 
+        elif action.get('select_preset_id'):
+            preset = get_preset_by_id(action['select_preset_id'])
+            if preset:
+                self.apply_preset(preset)
+
         elif action.get('select_preset') is not None:
             idx = action['select_preset']
             if 0 <= idx < len(PRESETS):
-                self.apply_preset(PRESETS[idx], idx)
-
-        elif action.get('cycle_preset'):
-            self.preset_index = (self.preset_index + 1) % len(PRESETS)
-            self.apply_preset(PRESETS[self.preset_index], self.preset_index)
+                self.apply_preset(PRESETS[idx])
 
         elif action.get('start_session'):
             if not self.session_active:
                 self.mood_dialog_pre = MoodDialog(self.width, self.height, mode='pre')
                 self.mood_dialog_pre.show()
 
-        elif action.get('ab_toggle'):
-            self.input_handler.ab_toggle()
-            c, b = self.input_handler.get_parameters()
-            self.audio_engine.set_parameters(c, b)
-
         elif action.get('toggle_mode'):
-            new_mode = 'monaural' if self.audio_engine.mode == 'binaural' else 'binaural'
-            self.audio_engine.set_mode(new_mode)
+            m = 'monaural' if self.audio_engine.mode == 'binaural' else 'binaural'
+            self.audio_engine.set_mode(m)
 
         elif action.get('toggle_isochronic'):
             self.audio_engine.isochronic_mode = not self.audio_engine.isochronic_mode
@@ -199,39 +215,45 @@ class ToneFlowApp:
             cur = self.audio_engine.harmonic_layers
             self.audio_engine.harmonic_layers = 1 if cur >= 3 else cur + 1
 
-        elif action.get('toggle_reverb'):
-            self.reverb_enabled = not self.reverb_enabled
-            self.audio_engine.effects.set_reverb(self.reverb_enabled)
+        elif action.get('cycle_perception'):
+            self.audio_engine.cycle_perception_mode()
+            self._perception_state_reset()
+
+        elif action.get('cycle_reverb'):
+            self.reverb_preset = self.audio_engine.cycle_reverb()
+            if self.reverb_preset != 'off' and self.audio_engine.effects.reverb:
+                self.audio_engine.effects.reverb.set_wet(
+                    self.audio_engine.effects.reverb.wet)
+
+        elif action.get('set_reverb_wet') is not None:
+            wet = action['set_reverb_wet']
+            self.audio_engine.set_reverb_wet(wet)
 
         elif action.get('set_noise'):
-            noise_type = action['set_noise']
-            if self.noise_enabled and self.noise_type == noise_type:
+            nt = action['set_noise']
+            if self.noise_enabled and self.noise_type == nt:
                 self.noise_enabled = False
                 self.audio_engine.effects.set_noise(False)
             else:
                 self.noise_enabled = True
-                self.noise_type = noise_type
-                self.audio_engine.effects.set_noise(True, noise_type)
+                self.noise_type = nt
+                self.audio_engine.effects.set_noise(True, nt)
 
         elif action.get('set_volume') is not None:
             self.audio_engine.set_volume(action['set_volume'])
 
         elif action.get('volume_up'):
             self.audio_engine.adjust_volume(0.05)
-
         elif action.get('volume_down'):
             self.audio_engine.adjust_volume(-0.05)
 
         elif action.get('export'):
             self.export_dialog = ExportDialog(self.width, self.height)
             self.export_dialog.show()
-
         elif action.get('show_about'):
             self.show_about = not self.show_about
-
         elif action.get('show_safety'):
             self.show_safety = not self.show_safety
-
         elif action.get('show_calibration'):
             if not self.calibration_helper.is_active:
                 self.calibration_helper.start_calibration()
@@ -241,6 +263,7 @@ class ToneFlowApp:
             self.width, self.height = w, h
             self.input_handler.width = w
             self.input_handler.height = h
+            self.input_handler.set_panel_width(PANEL_WIDTH)
             self.hud.resize(w, h, PANEL_WIDTH)
             self.about_overlay.resize(w, h)
             self.safety_overlay.resize(w, h)
@@ -249,8 +272,7 @@ class ToneFlowApp:
             self.visualizer.resize(w - PANEL_WIDTH, h)
 
     def start_session(self):
-        duration_min = self.current_preset.get('duration_min', 15)
-        self.audio_engine.start_session(duration_min)
+        self.audio_engine.start_session(self.current_preset.get('duration_min', 15))
         self.session_active = True
 
     def end_session(self, mood_post):
@@ -264,7 +286,7 @@ class ToneFlowApp:
             beat_hz=self.audio_engine.beat_hz,
             mode=self.audio_engine.mode,
             effects={
-                'reverb': {'enabled': self.reverb_enabled},
+                'reverb': {'enabled': self.reverb_preset != 'off', 'preset': self.reverb_preset},
                 'noise': {'enabled': self.noise_enabled,
                           'type': self.noise_type if self.noise_enabled else None},
             },
@@ -275,9 +297,11 @@ class ToneFlowApp:
         self.session_start_mood = None
 
     def do_export(self, duration_min):
+        rev = self.reverb_preset
+        wet = self.audio_engine.effects.reverb.wet if self.audio_engine.effects.reverb else 0.18
         effects_config = {
-            'reverb': {'enabled': self.reverb_enabled, 'wet_dry': 0.35},
-            'noise': {'enabled': self.noise_enabled, 'type': self.noise_type, 'level_dbfs': -20.0},
+            'reverb': {'enabled': rev != 'off', 'preset': rev, 'wet_dry': wet},
+            'noise': {'enabled': self.noise_enabled, 'type': self.noise_type, 'level_dbfs': -24.0},
         }
         filename = self.history.generate_export_filename(self.current_preset['id'])
         output_path = self.history.get_export_path(filename)
@@ -296,33 +320,34 @@ class ToneFlowApp:
 
     def render(self):
         self.screen.fill((6, 6, 14))
-
         self.visualizer.render(self.screen, panel_offset=PANEL_WIDTH)
 
         elapsed, total, _, _ = self.audio_engine.get_session_progress()
+        rev_name, rev_wet = self.audio_engine.get_reverb_info()
 
         self.control_panel.sync_state({
             'mode': self.audio_engine.mode,
             'isochronic': self.audio_engine.isochronic_mode,
             'harmonic_layers': self.audio_engine.harmonic_layers,
-            'reverb': self.reverb_enabled,
+            'reverb_preset': rev_name,
+            'reverb_wet': rev_wet,
+            'perception': self.audio_engine.perception_mode,
             'noise_pink': self.noise_enabled and self.noise_type == 'pink',
             'noise_white': self.noise_enabled and self.noise_type == 'white',
             'volume': self.audio_engine.master_volume,
             'session_active': self.session_active,
-            'preset_index': self.preset_index,
+            'preset_id': self.current_preset['id'],
         })
         self.control_panel.render(self.screen)
 
-        tuning_cursor = None
-        if self.input_handler.is_tuning():
-            tuning_cursor = self.input_handler.get_tuning_cursor_pos()
-
+        tc = self.input_handler.get_tuning_cursor_pos() if self.input_handler.is_tuning() else None
         self.hud.render(self.screen, {
             'carrier_hz': self.audio_engine.carrier_hz,
             'beat_hz': self.audio_engine.beat_hz,
             'mode': self.audio_engine.mode,
             'isochronic': self.audio_engine.isochronic_mode,
+            'perception': self.audio_engine.perception_mode,
+            'reverb_preset': rev_name,
             'brainwave_state': self.audio_engine.get_brainwave_state(),
             'session_time': elapsed if self.session_active else None,
             'session_total': total if self.session_active and total != float('inf') else None,
@@ -330,7 +355,7 @@ class ToneFlowApp:
             'audio_chunk': self.audio_engine.get_last_chunk(),
             'dt': self.clock.get_time() / 1000.0,
             'tuning_active': self.input_handler.is_tuning(),
-            'tuning_cursor': tuning_cursor,
+            'tuning_cursor': tc,
         })
 
         if self.show_about:
@@ -354,8 +379,7 @@ class ToneFlowApp:
 
 def main():
     try:
-        app = ToneFlowApp()
-        app.run()
+        ToneFlowApp().run()
     except Exception as e:
         print(f"Fatal error: {e}")
         import traceback

@@ -1,7 +1,15 @@
 """Calibration helper for SPL estimation."""
 
 import pygame
+
 from ..audio import osc
+from .dialogs import Button
+from .modal import (
+    check_modal_dismiss,
+    close_button_rect,
+    draw_close_button,
+    draw_close_hint,
+)
 
 
 class CalibrationHelper:
@@ -20,8 +28,8 @@ INSTRUCTIONS:
 1. Adjust your system volume so the noise level 
    matches normal speech at arm's length
 2. This typically corresponds to ~60-70 dBA
-3. Press SPACE when comfortable
-4. Press ESC to cancel
+3. Press SPACE or Save when comfortable
+4. Cancel with Esc, click outside, or the Cancel button
 
 The calibration will help estimate safe listening levels.
 """.strip()
@@ -46,15 +54,43 @@ The calibration will help estimate safe listening levels.
         self.bg_color = (15, 15, 25, 240)
         self.text_color = (220, 220, 230)
         self.title_color = (150, 255, 150)
-        
+        self.hint_font = pygame.font.SysFont('Arial', 12)
+
         # Calibration state
         self.is_active = False
         self.calibration_channel = None
+        self.save_button = None
+        self.cancel_button = None
+
+    def _content_rect(self):
+        box_width = min(600, self.width - 80)
+        box_height = min(400, self.height - 80)
+        box_x = (self.width - box_width) // 2
+        box_y = (self.height - box_height) // 2
+        return pygame.Rect(box_x, box_y, box_width, box_height)
+
+    def _layout_buttons(self, content):
+        btn_y = content.bottom - 70
+        btn_w = 120
+        gap = 20
+        cx = content.centerx
+        self.save_button = Button(
+            (cx - btn_w - gap // 2, btn_y, btn_w, 36),
+            'Save',
+            color=(70, 150, 70),
+            hover_color=(100, 180, 100),
+        )
+        self.cancel_button = Button(
+            (cx + gap // 2, btn_y, btn_w, 36),
+            'Cancel',
+            color=(120, 120, 120),
+            hover_color=(150, 150, 150),
+        )
     
     def start_calibration(self):
         """Start calibration flow."""
         self.is_active = True
-        
+        self._layout_buttons(self._content_rect())
         # Generate pink noise for calibration (5 seconds, looped)
         pink_noise = osc.generate_pink_noise(5.0, 44100)
         
@@ -82,7 +118,10 @@ The calibration will help estimate safe listening levels.
         if self.calibration_channel:
             self.calibration_channel.stop()
             self.calibration_channel = None
-        
+
+        self.save_button = None
+        self.cancel_button = None
+
         if save:
             # Set calibration offset (assuming 65 dBA target for speech)
             self.audio_engine.set_spl_calibration(65.0)
@@ -96,15 +135,32 @@ The calibration will help estimate safe listening levels.
         """
         if not self.is_active:
             return None
-        
+
+        content = self._content_rect()
+        close = close_button_rect(content)
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            if self.save_button and self.save_button.handle_event(event):
+                self.stop_calibration(save=True)
+                return 'done'
+            if self.cancel_button and self.cancel_button.handle_event(event):
+                self.stop_calibration(save=False)
+                return 'cancel'
+
+        if check_modal_dismiss(event, content, close):
+            self.stop_calibration(save=False)
+            return 'cancel'
+
         if event.type == pygame.KEYDOWN:
             if event.key == pygame.K_SPACE:
                 self.stop_calibration(save=True)
                 return 'done'
-            elif event.key == pygame.K_ESCAPE:
-                self.stop_calibration(save=False)
-                return 'cancel'
-        
+
+        if self.save_button:
+            self.save_button.handle_event(event)
+        if self.cancel_button:
+            self.cancel_button.handle_event(event)
+
         return None
     
     def render(self, surface):
@@ -117,16 +173,12 @@ The calibration will help estimate safe listening levels.
         overlay.fill(self.bg_color)
         surface.blit(overlay, (0, 0))
         
-        # Content box
-        box_width = min(600, self.width - 80)
-        box_height = min(400, self.height - 80)
-        box_x = (self.width - box_width) // 2
-        box_y = (self.height - box_height) // 2
-        
-        pygame.draw.rect(surface, (25, 35, 25), 
-                        (box_x, box_y, box_width, box_height))
-        pygame.draw.rect(surface, (100, 200, 100), 
-                        (box_x, box_y, box_width, box_height), 3)
+        content = self._content_rect()
+        box_x, box_y = content.x, content.y
+        box_width, box_height = content.width, content.height
+
+        pygame.draw.rect(surface, (25, 35, 25), content)
+        pygame.draw.rect(surface, (100, 200, 100), content, 3)
         
         # Render text
         margin = 30
@@ -185,9 +237,19 @@ The calibration will help estimate safe listening levels.
         )
         pygame.draw.circle(surface, indicator_color, 
                           (int(box_x + box_width // 2), int(box_y + box_height - 40)), 8)
+
+        if self.save_button and self.cancel_button:
+            self.save_button.draw(surface)
+            self.cancel_button.draw(surface)
+
+        close = close_button_rect(content)
+        draw_close_button(surface, close)
+        draw_close_hint(surface, self.hint_font, content, y_offset=-8)
     
     def resize(self, width, height):
         """Handle window resize."""
         self.width = width
         self.height = height
+        if self.is_active:
+            self._layout_buttons(self._content_rect())
 

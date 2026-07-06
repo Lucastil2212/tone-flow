@@ -134,7 +134,7 @@ class Fallback2DVisualizer:
 
         self.time = 0.0
         self.beat_hz = 10.0
-        self.carrier_hz = 512.0
+        self.carrier_hz = 200.0
         self.rms = 0.0
         self.brainwave_state = ("Alpha", "relaxed alertness", (40, 200, 120))
         self.isochronic = False

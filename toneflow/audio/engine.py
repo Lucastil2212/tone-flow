@@ -41,15 +41,24 @@ class AudioEngine:
         self.buffer_size = buffer_size or self.CHUNK_SAMPLES
         self.chunk_duration = self.buffer_size / sample_rate
 
-        self.carrier_hz = 512.0
+        self.carrier_hz = 200.0
         self.beat_hz = 10.0
-        self.target_carrier_hz = 512.0
+        self.target_carrier_hz = 200.0
         self.target_beat_hz = 10.0
 
         self.mode = 'binaural'
         self.isochronic_mode = False
         self.harmonic_layers = 1
         self.harmonic_phases = [0.0, 0.0, 0.0]
+
+        # Perception mode — spatial/rhythmic post-processing
+        self.perception_mode = 'standard'
+        self._perception_state = {
+            'rotation_phase': 0.0,
+            'alt_phase': 0.0,
+            'shimmer_phase': 0.0,
+            'breath_phase': 0.0,
+        }
 
         # ~150 ms smoothing — stable tone, smooth tuning
         self.smooth_alpha = 1.0 - np.exp(-self.chunk_duration / 0.150)
@@ -87,6 +96,27 @@ class AudioEngine:
     def set_mode(self, mode):
         if mode in ('binaural', 'monaural'):
             self.mode = mode
+
+    def set_perception_mode(self, mode):
+        if mode in osc.PERCEPTION_MODES:
+            self.perception_mode = mode
+
+    def cycle_perception_mode(self):
+        self.perception_mode = osc.cycle_perception_mode(self.perception_mode)
+        return self.perception_mode
+
+    def get_reverb_info(self):
+        """Return (preset_name, wet) for UI."""
+        fx = self.effects
+        if fx.reverb is None or not fx.reverb.enabled:
+            return 'off', 0.0
+        return fx.reverb_preset, fx.reverb.wet
+
+    def cycle_reverb(self):
+        return self.effects.cycle_reverb_preset()
+
+    def set_reverb_wet(self, wet):
+        self.effects.set_reverb_wet(wet)
 
     def set_volume(self, volume):
         self.master_volume = np.clip(volume, 0.0, 1.0)
@@ -165,6 +195,10 @@ class AudioEngine:
         else:
             chunk, self.phase_left, self.phase_right = osc.generate_monaural_chunk_ramped(
                 c0, c1, b0, b1, n, self.sample_rate, self.phase_left, self.phase_right)
+
+        chunk = osc.apply_perception(
+            chunk, self.perception_mode, self.beat_hz,
+            self.sample_rate, self._perception_state)
 
         chunk = self._apply_ramp(chunk)
         chunk = self.effects.process(chunk)

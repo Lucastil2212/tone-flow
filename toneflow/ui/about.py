@@ -2,6 +2,13 @@
 
 import pygame
 
+from .modal import (
+    check_modal_dismiss,
+    close_button_rect,
+    draw_close_button,
+    draw_close_hint,
+)
+
 
 class AboutOverlay:
     """
@@ -20,19 +27,21 @@ are presented separately to each ear. The beat frequency equals the difference
 between the two carrier tones.
 
 EVIDENCE SUMMARY
-Some studies and meta-analyses (2018/2019) report small–moderate benefits for 
-anxiety and aspects of cognition with 10–30+ minute exposures. Results vary 
-by protocol and listener.
+Meta-analyses (Garcia-Argibay 2018; later reviews) report small–moderate 
+effects on anxiety, cognition, and pain with 10–30+ minute exposures. 
+Results vary by frequency, duration, and individual.
 
-Monaural beats (MB) can show stronger neural entrainment in some studies 
-compared to binaural beats (BB), but mood effects are inconsistent.
+EEG BANDS (clinical convention)
+Delta 0.5–4 | Theta 4–8 | Alpha 8–12 | Beta 13–30 | Gamma ≥30 Hz
 
-PRESETS
-• Alpha (10 Hz) / Theta (6 Hz) / Beta (18 Hz): Evidence-informed
-• Gamma (40 Hz): Experimental focus (mixed evidence)
-• Schumann (7.83 Hz): Reflects Earth-ionosphere resonance (physics); 
-  wellness claims unproven
-• Intuition Boost (528 Hz carrier): User preference, not evidence-based
+PRESET LABELS
+• Alpha (10 Hz) / Theta (6 Hz) / Beta (18 Hz): Evidence-informed — commonly 
+  studied; effects not guaranteed
+• Delta (2 Hz): Experimental — sleep studies use ~2–3 Hz; evidence mixed
+• Gamma (40 Hz): Experimental — some cognition work; often pulsed, not BB
+• Schumann (7.83 Hz): Real geophysical resonance; wellness unproven
+• Hemi-Sync-style: Inspired by Monroe Focus states — not official Monroe audio
+• 432/528 Hz carriers: Aesthetic preference only — no entrainment evidence
 
 REQUIREMENTS
 • Headphones required for binaural beats (stereo separation needed)
@@ -41,8 +50,6 @@ REQUIREMENTS
 DISCLAIMER
 ToneFlow is not a medical device. Effects vary by individual. 
 Do not use as a substitute for professional medical advice.
-
-Press A or Esc to close
 """.strip()
     
     def __init__(self, width, height):
@@ -63,7 +70,24 @@ Press A or Esc to close
         self.bg_color = (10, 10, 20, 230)  # Semi-transparent dark
         self.text_color = (220, 220, 230)
         self.title_color = (150, 200, 255)
-    
+        self.hint_font = pygame.font.SysFont('Arial', 12)
+
+    def _content_rect(self):
+        box_width = min(800, self.width - 80)
+        box_height = min(600, self.height - 80)
+        box_x = (self.width - box_width) // 2
+        box_y = (self.height - box_height) // 2
+        return pygame.Rect(box_x, box_y, box_width, box_height)
+
+    def handle_event(self, event) -> bool:
+        """Return True if the overlay should close."""
+        content = self._content_rect()
+        close = close_button_rect(content)
+        hover = event.type == pygame.MOUSEMOTION and close.collidepoint(event.pos)
+        if event.type == pygame.MOUSEMOTION:
+            self._close_hover = hover
+        return check_modal_dismiss(event, content, close, close_keys=(pygame.K_a,))
+
     def render(self, surface):
         """
         Render about overlay.
@@ -76,17 +100,16 @@ Press A or Esc to close
         overlay.fill(self.bg_color)
         surface.blit(overlay, (0, 0))
         
-        # Content box
-        box_width = min(800, self.width - 80)
-        box_height = min(600, self.height - 80)
-        box_x = (self.width - box_width) // 2
-        box_y = (self.height - box_height) // 2
-        
-        # Draw box
-        pygame.draw.rect(surface, (20, 20, 40), 
-                        (box_x, box_y, box_width, box_height))
-        pygame.draw.rect(surface, (100, 100, 150), 
-                        (box_x, box_y, box_width, box_height), 2)
+        content = self._content_rect()
+        box_x, box_y = content.x, content.y
+        box_width, box_height = content.width, content.height
+
+        pygame.draw.rect(surface, (20, 20, 40), content)
+        pygame.draw.rect(surface, (100, 100, 150), content, 2)
+
+        close = close_button_rect(content)
+        draw_close_button(surface, close, getattr(self, '_close_hover', False))
+        draw_close_hint(surface, self.hint_font, content)
         
         # Render text
         margin = 30
@@ -177,8 +200,6 @@ RECOMMENDATIONS
 
 Note: SPL estimation is approximate. For precise measurements, 
 use a calibrated sound level meter.
-
-Press S or Esc to close
 """.strip()
     
     def __init__(self, width, height):
@@ -193,7 +214,23 @@ Press S or Esc to close
         self.bg_color = (20, 10, 10, 230)
         self.text_color = (230, 220, 220)
         self.title_color = (255, 200, 150)
-    
+        self.hint_font = pygame.font.SysFont('Arial', 12)
+
+    def _content_rect(self):
+        box_width = min(700, self.width - 80)
+        box_height = min(550, self.height - 80)
+        box_x = (self.width - box_width) // 2
+        box_y = (self.height - box_height) // 2
+        return pygame.Rect(box_x, box_y, box_width, box_height)
+
+    def handle_event(self, event) -> bool:
+        """Return True if the overlay should close."""
+        content = self._content_rect()
+        close = close_button_rect(content)
+        if event.type == pygame.MOUSEMOTION:
+            self._close_hover = close.collidepoint(event.pos)
+        return check_modal_dismiss(event, content, close, close_keys=(pygame.K_s,))
+
     def render(self, surface):
         """Render safety overlay."""
         # Similar to AboutOverlay but with safety text
@@ -201,15 +238,16 @@ Press S or Esc to close
         overlay.fill(self.bg_color)
         surface.blit(overlay, (0, 0))
         
-        box_width = min(700, self.width - 80)
-        box_height = min(550, self.height - 80)
-        box_x = (self.width - box_width) // 2
-        box_y = (self.height - box_height) // 2
-        
-        pygame.draw.rect(surface, (40, 20, 20), 
-                        (box_x, box_y, box_width, box_height))
-        pygame.draw.rect(surface, (200, 100, 100), 
-                        (box_x, box_y, box_width, box_height), 2)
+        content = self._content_rect()
+        box_x, box_y = content.x, content.y
+        box_width, box_height = content.width, content.height
+
+        pygame.draw.rect(surface, (40, 20, 20), content)
+        pygame.draw.rect(surface, (200, 100, 100), content, 2)
+
+        close = close_button_rect(content)
+        draw_close_button(surface, close, getattr(self, '_close_hover', False))
+        draw_close_hint(surface, self.hint_font, content)
         
         margin = 30
         y_pos = box_y + margin

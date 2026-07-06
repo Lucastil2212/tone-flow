@@ -16,14 +16,14 @@ class InputHandler:
         self.height = height
         self.panel_width = panel_width
 
-        self.carrier_hz = 512.0
+        self.carrier_hz = 200.0
         self.beat_hz = 10.0
 
         self.shift_held = False
         self.space_held = False
 
         self.tuning_active = False
-        self.ab_slot = {'carrier_hz': 440.0, 'beat_hz': 8.0}
+        self.ab_slot = {'carrier_hz': 180.0, 'beat_hz': 8.0}
         self.quit_requested = False
 
     def set_panel_width(self, panel_width):

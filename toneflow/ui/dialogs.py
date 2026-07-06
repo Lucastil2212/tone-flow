@@ -3,6 +3,13 @@
 import pygame
 from typing import Optional, Dict
 
+from .modal import (
+    check_modal_dismiss,
+    close_button_rect,
+    draw_close_button,
+    draw_close_hint,
+)
+
 
 class Button:
     """Simple pygame button."""
@@ -120,7 +127,13 @@ class MoodDialog:
         self.focus_slider = None
         self.submit_button = None
         self.skip_button = None
-    
+        self.hint_font = pygame.font.SysFont('Arial', 12)
+
+    @property
+    def content_rect(self):
+        return pygame.Rect(self.dialog_x, self.dialog_y,
+                           self.dialog_width, self.dialog_height)
+
     def show(self):
         """Show the mood dialog."""
         self.is_active = True
@@ -169,7 +182,13 @@ class MoodDialog:
         """
         if not self.is_active:
             return None
-        
+
+        close = close_button_rect(self.content_rect)
+        if check_modal_dismiss(event, self.content_rect, close):
+            self.result = {}
+            self.hide()
+            return self.result
+
         # Handle sliders
         self.calm_slider.handle_event(event)
         self.focus_slider.handle_event(event)
@@ -228,6 +247,10 @@ class MoodDialog:
         self.submit_button.draw(surface)
         self.skip_button.draw(surface)
 
+        close = close_button_rect(dialog_rect)
+        draw_close_button(surface, close)
+        draw_close_hint(surface, self.hint_font, dialog_rect)
+
 
 class ExportDialog:
     """
@@ -261,7 +284,13 @@ class ExportDialog:
         self.duration_buttons = []
         self.export_button = None
         self.cancel_button = None
-    
+        self.hint_font = pygame.font.SysFont('Arial', 12)
+
+    @property
+    def content_rect(self):
+        return pygame.Rect(self.dialog_x, self.dialog_y,
+                           self.dialog_width, self.dialog_height)
+
     def show(self):
         """Show the export dialog."""
         self.is_active = True
@@ -310,7 +339,13 @@ class ExportDialog:
         """
         if not self.is_active:
             return None
-        
+
+        close = close_button_rect(self.content_rect)
+        if check_modal_dismiss(event, self.content_rect, close):
+            self.result = 0
+            self.hide()
+            return self.result
+
         # Handle duration selection
         for i, button in enumerate(self.duration_buttons):
             if button.handle_event(event):
@@ -364,3 +399,7 @@ class ExportDialog:
         # Action buttons
         self.export_button.draw(surface)
         self.cancel_button.draw(surface)
+
+        close = close_button_rect(dialog_rect)
+        draw_close_button(surface, close)
+        draw_close_hint(surface, self.hint_font, dialog_rect)

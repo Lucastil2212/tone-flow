@@ -71,8 +71,9 @@ def export_wav(
     
     # Configure effects from config dict
     if effects_config.get('reverb', {}).get('enabled', False):
-        wet_dry = effects_config['reverb'].get('wet_dry', 0.35)
-        effects.set_reverb(True, wet_dry)
+        preset = effects_config['reverb'].get('preset', 'room')
+        wet = effects_config['reverb'].get('wet_dry', 0.18)
+        effects.set_reverb(True, preset=preset, wet=wet)
     
     if effects_config.get('noise', {}).get('enabled', False):
         noise_type = effects_config['noise'].get('type', 'pink')

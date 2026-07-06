@@ -185,3 +185,88 @@ def generate_white_noise(duration_sec, sample_rate=44100):
     left = np.random.randn(n_samples).astype(np.float32) * 0.35
     right = np.random.randn(n_samples).astype(np.float32) * 0.35
     return np.stack([left, right], axis=1)
+
+
+# ---------------------------------------------------------------------------
+# Perception transforms — spatial / rhythmic modifiers applied after synthesis
+# ---------------------------------------------------------------------------
+
+PERCEPTION_MODES = ['standard', 'rotate', 'alternate', 'shimmer', 'breath']
+PERCEPTION_LABELS = {
+    'standard': 'Standard',
+    'rotate': 'Rotating field',
+    'alternate': 'Ear alternate',
+    'shimmer': 'Shimmer',
+    'breath': 'Breath sync',
+}
+
+
+def apply_perception(chunk, mode, beat_hz, sample_rate, state: dict):
+    """
+    Post-process a stereo chunk for expanded perceptual effects.
+
+    Args:
+        chunk: [n, 2] float32
+        mode: one of PERCEPTION_MODES
+        beat_hz: current beat frequency
+        sample_rate: Hz
+        state: mutable dict with 'rotation_phase', 'breath_phase'
+
+    Returns:
+        Modified chunk (same shape)
+    """
+    if mode == 'standard' or mode not in PERCEPTION_LABELS:
+        return chunk
+
+    n = chunk.shape[0]
+    t = np.arange(n, dtype=np.float64) / sample_rate
+    out = chunk.copy()
+
+    if mode == 'rotate':
+        # Slow rotation of interaural emphasis — "sound moves around head"
+        rot_hz = min(0.15, max(0.04, beat_hz * 0.012))
+        phase0 = state.get('rotation_phase', 0.0)
+        pan = np.sin(2.0 * np.pi * rot_hz * t + phase0).astype(np.float32)
+        state['rotation_phase'] = (phase0 + 2.0 * np.pi * rot_hz * (n / sample_rate)) % (2.0 * np.pi)
+        # Crossfade L/R emphasis without changing pitch
+        out[:, 0] = chunk[:, 0] * (0.88 + 0.12 * pan) + chunk[:, 1] * (0.04 * (1.0 - pan))
+        out[:, 1] = chunk[:, 1] * (0.88 - 0.12 * pan) + chunk[:, 0] * (0.04 * (1.0 + pan))
+
+    elif mode == 'alternate':
+        # Pulse energy between ears at beat rate — strong spatial isochronic feel
+        b = max(beat_hz, 0.5)
+        phase0 = state.get('alt_phase', 0.0)
+        gate = (0.5 - 0.5 * np.cos(2.0 * np.pi * b * t + phase0)).astype(np.float32)
+        state['alt_phase'] = (phase0 + 2.0 * np.pi * b * (n / sample_rate)) % (2.0 * np.pi)
+        mono = (chunk[:, 0] + chunk[:, 1]) * 0.5
+        out[:, 0] = mono * gate
+        out[:, 1] = mono * (1.0 - gate)
+
+    elif mode == 'shimmer':
+        # Gentle amplitude shimmer at half-beat rate — ethereal texture
+        b = max(beat_hz, 0.5)
+        phase0 = state.get('shimmer_phase', 0.0)
+        am = (0.82 + 0.18 * np.sin(np.pi * b * t + phase0)).astype(np.float32)
+        state['shimmer_phase'] = phase0 + np.pi * b * (n / sample_rate)
+        out[:, 0] *= am
+        out[:, 1] *= am
+
+    elif mode == 'breath':
+        # ~6 breaths/min amplitude swell — somatic entrainment
+        breath_hz = 0.10
+        phase0 = state.get('breath_phase', 0.0)
+        swell = (0.55 + 0.45 * (0.5 - 0.5 * np.cos(2.0 * np.pi * breath_hz * t + phase0)))
+        swell = swell.astype(np.float32)
+        state['breath_phase'] = (phase0 + 2.0 * np.pi * breath_hz * (n / sample_rate)) % (2.0 * np.pi)
+        out[:, 0] *= swell
+        out[:, 1] *= swell
+
+    return out
+
+
+def cycle_perception_mode(current: str) -> str:
+    modes = PERCEPTION_MODES
+    if current not in modes:
+        return modes[0]
+    return modes[(modes.index(current) + 1) % len(modes)]
+
