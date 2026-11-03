@@ -18,7 +18,7 @@ class ParticleField:
     
     Features:
     - Particle scale pulses with beat frequency
-    - Hue mapped from carrier (100 Hz → blue, 1000 Hz → red)
+    - Hue mapped from carrier (20 Hz → blue, 1000 Hz → red)
     - Brightness driven by RMS amplitude
     - Slow camera orbit
     """
@@ -98,7 +98,7 @@ class ParticleField:
         Args:
             dt: Time delta (seconds)
             beat_hz: Current beat frequency (0-40 Hz)
-            carrier_hz: Current carrier frequency (100-1000 Hz)
+            carrier_hz: Current carrier frequency (20-1000 Hz)
             rms: Current RMS amplitude (0-1)
         """
         self.time += dt
@@ -134,8 +134,8 @@ class ParticleField:
         pulse = 0.5 + 0.5 * np.sin(2.0 * np.pi * self.beat_hz * self.time)
         base_scale = 0.3 + 0.7 * pulse
         
-        # Map carrier to hue (100 Hz → 0.6 (blue), 1000 Hz → 0.0 (red))
-        hue = 0.6 - (self.carrier_hz - 100.0) / 900.0 * 0.6
+        # Map carrier to hue (20 Hz → 0.6 (blue), 1000 Hz → 0.0 (red))
+        hue = 0.6 - (self.carrier_hz - 20.0) / 980.0 * 0.6
         hue = np.clip(hue, 0.0, 0.6)
         
         # Brightness - MAXIMUM for visibility

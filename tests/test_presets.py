@@ -46,7 +46,7 @@ def test_all_presets_valid():
         assert 0.0 <= beat_hz <= 40.0, f"Beat Hz out of range: {beat_hz}"
 
         carrier_hz = preset['carrier_hz']
-        assert 100.0 <= carrier_hz <= 1000.0, f"Carrier Hz out of range: {carrier_hz}"
+        assert 20.0 <= carrier_hz <= 1000.0, f"Carrier Hz out of range: {carrier_hz}"
 
         # Comfort-band carriers for core presets; color/solfeggio may go higher
         is_color = (

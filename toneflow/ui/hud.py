@@ -75,7 +75,7 @@ class HUD:
         pygame.draw.rect(surface, self.accent, canvas, 2)
 
         # Axis labels
-        surface.blit(self.font_small.render("Carrier 100 Hz", True, self.dim_color),
+        surface.blit(self.font_small.render("Carrier 20 Hz", True, self.dim_color),
                      (ox + 12, self.height - 28))
         surface.blit(self.font_small.render("1000 Hz", True, self.dim_color),
                      (ox + cw - 58, self.height - 28))

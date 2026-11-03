@@ -1,6 +1,7 @@
 """Input handling: modifier-gated mouse tuning + keyboard shortcuts."""
 
 import pygame
+from toneflow.audio.osc import CARRIER_MIN_HZ, CARRIER_MAX_HZ, BEAT_MAX_HZ
 
 
 class InputHandler:
@@ -48,8 +49,9 @@ class InputHandler:
         t_x = local_x / max(1, canvas.width)
         t_y = 1.0 - (local_y / max(1, canvas.height))
 
-        self.carrier_hz = 100.0 + t_x * 900.0
-        self.beat_hz = t_y * 40.0
+        span = CARRIER_MAX_HZ - CARRIER_MIN_HZ
+        self.carrier_hz = CARRIER_MIN_HZ + t_x * span
+        self.beat_hz = t_y * BEAT_MAX_HZ
 
     def handle_event(self, event):
         action = {}
@@ -129,8 +131,9 @@ class InputHandler:
     def get_tuning_cursor_pos(self):
         """Return (x, y) of current carrier/beat mapped back to canvas coords."""
         canvas = self.canvas_rect()
-        t_x = (self.carrier_hz - 100.0) / 900.0
-        t_y = 1.0 - (self.beat_hz / 40.0)
+        span = CARRIER_MAX_HZ - CARRIER_MIN_HZ
+        t_x = (self.carrier_hz - CARRIER_MIN_HZ) / span
+        t_y = 1.0 - (self.beat_hz / BEAT_MAX_HZ)
         x = canvas.x + int(t_x * canvas.width)
         y = canvas.y + int((1.0 - t_y) * canvas.height)
         return x, y

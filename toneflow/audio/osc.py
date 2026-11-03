@@ -6,6 +6,11 @@ BINAURAL_AMP = 0.85
 MONAURAL_AMP = 0.42
 ISOCHRONIC_AMP = 0.80
 
+# Human hearing typically ~20 Hz–20 kHz; keep carriers in the audible bass–mid range.
+CARRIER_MIN_HZ = 20.0
+CARRIER_MAX_HZ = 1000.0
+BEAT_MAX_HZ = 40.0
+
 
 def _n_samples(duration_sec, sample_rate):
     return max(1, int(round(duration_sec * sample_rate)))
@@ -31,14 +36,24 @@ def _end_phase(phases):
     return float(phases[-1] % (2.0 * np.pi))
 
 
+def _clip_carrier(hz):
+    return np.clip(hz, CARRIER_MIN_HZ, CARRIER_MAX_HZ)
+
+
+def _ear_freqs(carrier, beat):
+    """Split carrier ± beat/2, keeping both ears at/above hearing floor."""
+    f_l = np.maximum(carrier - beat * 0.5, CARRIER_MIN_HZ)
+    f_r = np.maximum(carrier + beat * 0.5, CARRIER_MIN_HZ)
+    return f_l, f_r
+
+
 def _binaural_ramped(c0, c1, b0, b1, n_samples, sample_rate, pl, pr):
-    c0, c1 = np.clip(c0, 100.0, 1000.0), np.clip(c1, 100.0, 1000.0)
-    b0, b1 = np.clip(b0, 0.0, 40.0), np.clip(b1, 0.0, 40.0)
+    c0, c1 = _clip_carrier(c0), _clip_carrier(c1)
+    b0, b1 = np.clip(b0, 0.0, BEAT_MAX_HZ), np.clip(b1, 0.0, BEAT_MAX_HZ)
 
     carrier = _ramp_freq(c0, c1, n_samples)
     beat = _ramp_freq(b0, b1, n_samples)
-    f_l = carrier - beat * 0.5
-    f_r = carrier + beat * 0.5
+    f_l, f_r = _ear_freqs(carrier, beat)
 
     phases_l = _integrate_phases(f_l, n_samples, sample_rate, pl)
     phases_r = _integrate_phases(f_r, n_samples, sample_rate, pr)
@@ -49,21 +64,22 @@ def _binaural_ramped(c0, c1, b0, b1, n_samples, sample_rate, pl, pr):
 
 
 def _monaural_ramped(c0, c1, b0, b1, n_samples, sample_rate, pl, pr):
-    c0, c1 = np.clip(c0, 100.0, 1000.0), np.clip(c1, 100.0, 1000.0)
-    b0, b1 = np.clip(b0, 0.0, 40.0), np.clip(b1, 0.0, 40.0)
+    c0, c1 = _clip_carrier(c0), _clip_carrier(c1)
+    b0, b1 = np.clip(b0, 0.0, BEAT_MAX_HZ), np.clip(b1, 0.0, BEAT_MAX_HZ)
 
     carrier = _ramp_freq(c0, c1, n_samples)
     beat = _ramp_freq(b0, b1, n_samples)
+    f_l, f_r = _ear_freqs(carrier, beat)
 
-    phases_l = _integrate_phases(carrier - beat * 0.5, n_samples, sample_rate, pl)
-    phases_r = _integrate_phases(carrier + beat * 0.5, n_samples, sample_rate, pr)
+    phases_l = _integrate_phases(f_l, n_samples, sample_rate, pl)
+    phases_r = _integrate_phases(f_r, n_samples, sample_rate, pr)
 
     mono = (_sine(phases_l) + _sine(phases_r)) * MONAURAL_AMP
     return np.stack([mono, mono], axis=1), _end_phase(phases_l), _end_phase(phases_r)
 
 
 def _isochronic_ramped(c0, c1, b0, b1, n_samples, sample_rate, pc, pb):
-    c0, c1 = np.clip(c0, 100.0, 1000.0), np.clip(c1, 100.0, 1000.0)
+    c0, c1 = _clip_carrier(c0), _clip_carrier(c1)
     b0 = np.clip(max(b0, 0.1), 0.1, 40.0)
     b1 = np.clip(max(b1, 0.1), 0.1, 40.0)
 
@@ -139,11 +155,11 @@ def generate_layered_binaural_chunk(base_start, base_end, beat_start, beat_end,
 
     if n > 1:
         carrier = _ramp_freq(
-            np.clip(base_start, 100.0, 1000.0),
-            np.clip(base_end, 100.0, 1000.0),
+            _clip_carrier(base_start),
+            _clip_carrier(base_end),
             n_samples)
         for i in range(1, n):
-            freq = np.clip(carrier * layer_ratios[i], 100.0, 4000.0)
+            freq = np.clip(carrier * layer_ratios[i], CARRIER_MIN_HZ, 4000.0)
             phases = _integrate_phases(freq, n_samples, sample_rate, harmonic_phases[i])
             tone = _sine(phases) * layer_amps[i]
             left += tone

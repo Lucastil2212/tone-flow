@@ -94,8 +94,9 @@ class AudioEngine:
         self._env_scratch = np.ones(self.buffer_size, dtype=np.float32)
 
     def set_parameters(self, carrier_hz, beat_hz):
-        self.target_carrier_hz = np.clip(carrier_hz, 100.0, 1000.0)
-        self.target_beat_hz = np.clip(beat_hz, 0.0, 40.0)
+        from .osc import CARRIER_MIN_HZ, CARRIER_MAX_HZ, BEAT_MAX_HZ
+        self.target_carrier_hz = np.clip(carrier_hz, CARRIER_MIN_HZ, CARRIER_MAX_HZ)
+        self.target_beat_hz = np.clip(beat_hz, 0.0, BEAT_MAX_HZ)
 
     def snap_parameters(self):
         """Instantly lock to targets (call when tuning ends)."""

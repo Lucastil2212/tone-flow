@@ -22,7 +22,7 @@ def export_wav(
     Renders the entire session offline with effects.
     
     Args:
-        carrier_hz: Carrier frequency (100-1000 Hz)
+        carrier_hz: Carrier frequency (20-1000 Hz)
         beat_hz: Beat frequency (0-40 Hz)
         mode: 'binaural' or 'monaural'
         duration_min: Duration in minutes
@@ -34,7 +34,8 @@ def export_wav(
     ramp_duration = 30.0  # 30 second ramp-in/out
     
     # Clamp parameters
-    carrier_hz = np.clip(carrier_hz, 100.0, 1000.0)
+    from .osc import CARRIER_MIN_HZ, CARRIER_MAX_HZ
+    carrier_hz = np.clip(carrier_hz, CARRIER_MIN_HZ, CARRIER_MAX_HZ)
     beat_hz = np.clip(beat_hz, 0.0, 40.0)
     
     # Generate full session audio (with phase continuity from 0)

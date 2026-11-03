@@ -107,7 +107,7 @@ chmod +x app.py
 
 2. **Audio plays immediately** on launch! The app starts in "Free Play" mode:
    - Move your mouse to adjust carrier/beat frequencies in real-time
-   - X-axis: carrier (100-1000 Hz)
+   - X-axis: carrier (20-1000 Hz — down to the lower edge of human hearing)
    - Y-axis: beat (0-40 Hz)
    - Hear changes instantly as you explore
 
@@ -119,7 +119,7 @@ chmod +x app.py
 ### Controls
 
 **Mouse**:
-- **X-axis**: Carrier frequency (100-1000 Hz)
+- **X-axis**: Carrier frequency (20-1000 Hz)
 - **Y-axis**: Beat frequency (0-40 Hz)
 - **Left-click**: Lock parameters & start session
 - **Right-click**: A/B toggle (swap with saved configuration)
