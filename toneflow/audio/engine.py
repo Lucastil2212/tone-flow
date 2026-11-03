@@ -1,4 +1,4 @@
-"""Real-time audio engine — clean synthesis with reliable buffer delivery."""
+"""Real-time audio engine — phase-continuous synthesis with underrun-safe buffering."""
 
 import numpy as np
 import pygame
@@ -27,11 +27,13 @@ class AudioEngine:
     """
     Real-time binaural/isochronic/monaural engine.
 
-    Design choices for clean output:
-    - 2048-sample chunks (~46 ms) — safe at 60 FPS (needs ~22 chunks/s, supplies 60)
+    Design for clean, crackle-free output:
+    - 2048-sample chunks (~46 ms) with aggressive queue refill
+    - Prefill 2 chunks on start so the mixer never starves
     - Per-sample frequency ramp — no stepped warble between chunks
-    - Phase integration — no crossfade needed (crossfade caused doubling artifacts)
-    - No limiter on dry signal — only when effects push levels up
+    - Phase integration — continuous sine phase (no crossfade doubling)
+    - SciPy-backed reverb (C speed) so FX stay within real-time budget
+    - Vectorized session ramp envelope
     """
 
     CHUNK_SAMPLES = 2048
@@ -60,8 +62,11 @@ class AudioEngine:
             'breath_phase': 0.0,
         }
 
-        # ~150 ms smoothing — stable tone, smooth tuning
-        self.smooth_alpha = 1.0 - np.exp(-self.chunk_duration / 0.150)
+        # Optional visual colour override from color/vibration presets
+        self.colour_rgb = None  # (r,g,b) or None → use brainwave mapping
+
+        # ~120 ms smoothing — responsive but glitch-free
+        self.smooth_alpha = 1.0 - np.exp(-self.chunk_duration / 0.120)
 
         pygame.mixer.set_num_channels(1)
         self.effects = EffectsChain(sample_rate)
@@ -81,8 +86,12 @@ class AudioEngine:
         self.master_volume = 0.15
         self.channel: Optional[pygame.mixer.Channel] = None
 
-        # Stats
+        # Stats / safety
         self._underruns = 0
+        self._prefilled = False
+
+        # Scratch buffers to reduce allocations
+        self._env_scratch = np.ones(self.buffer_size, dtype=np.float32)
 
     def set_parameters(self, carrier_hz, beat_hz):
         self.target_carrier_hz = np.clip(carrier_hz, 100.0, 1000.0)
@@ -104,6 +113,10 @@ class AudioEngine:
     def cycle_perception_mode(self):
         self.perception_mode = osc.cycle_perception_mode(self.perception_mode)
         return self.perception_mode
+
+    def set_colour(self, rgb):
+        """Set optional RGB colour override for visualization (or None)."""
+        self.colour_rgb = rgb
 
     def get_reverb_info(self):
         """Return (preset_name, wet) for UI."""
@@ -130,24 +143,42 @@ class AudioEngine:
         self.session_duration = (duration_min * 60.0) if duration_min is not None else float('inf')
         if self.channel is None:
             self.channel = pygame.mixer.find_channel()
+        self._prefill()
 
     def stop_session(self):
         self.is_playing = False
         if self.channel is not None:
             self.channel.stop()
+        self._prefilled = False
 
-    def update(self, dt):
-        """Keep the mixer fed — may queue up to 2 chunks per call."""
+    def _ensure_channel(self):
         if self.channel is None:
             self.channel = pygame.mixer.Channel(0)
+
+    def _prefill(self):
+        """Queue two chunks so the mixer has ~90 ms headroom before first underrun risk."""
+        self._ensure_channel()
+        if not self.channel.get_busy():
+            self._queue_chunk(play=True)
+        if self.channel.get_queue() is None:
+            self._queue_chunk(play=False)
+        self._prefilled = True
+
+    def update(self, dt):
+        """Keep the mixer fed — refill aggressively to prevent crackling."""
+        self._ensure_channel()
+
+        if not self._prefilled:
+            self._prefill()
 
         if self.is_playing:
             self.session_time += dt
             if self.session_time >= self.session_duration:
                 self.stop_session()
 
+        # Allow up to 4 chunk gens/frame so we recover quickly after a hitch
         chunks_this_frame = 0
-        max_per_frame = 3
+        max_per_frame = 4
 
         while chunks_this_frame < max_per_frame:
             if not self.channel.get_busy():
@@ -162,7 +193,11 @@ class AudioEngine:
 
     def _queue_chunk(self, play=False):
         chunk = self._generate_chunk()
+        # Soft clip at int16 bounds (limiter should already catch peaks)
         chunk_int16 = np.clip(chunk * 32767.0, -32768, 32767).astype(np.int16)
+        # Ensure C-contiguous for pygame
+        if not chunk_int16.flags['C_CONTIGUOUS']:
+            chunk_int16 = np.ascontiguousarray(chunk_int16)
         sound = pygame.sndarray.make_sound(chunk_int16)
         if play:
             self.channel.play(sound)
@@ -202,33 +237,36 @@ class AudioEngine:
 
         chunk = self._apply_ramp(chunk)
         chunk = self.effects.process(chunk)
-        chunk = chunk * self.master_volume
+        chunk = chunk * np.float32(self.master_volume)
 
         self.current_rms = float(np.sqrt(np.mean(chunk ** 2)))
-        self.last_chunk = chunk.copy()
+        self.last_chunk = chunk
         return chunk
 
     def _apply_ramp(self, chunk):
+        """Vectorized session fade in/out — no per-sample Python loops."""
         if not self.is_playing:
             return chunk
 
         n = chunk.shape[0]
-        env = np.ones(n, dtype=np.float32)
-        dt_sample = 1.0 / self.sample_rate
+        if self._env_scratch.shape[0] != n:
+            self._env_scratch = np.ones(n, dtype=np.float32)
+        else:
+            self._env_scratch.fill(1.0)
 
-        if self.session_time < self.ramp_duration:
-            t0 = self.session_time - self.chunk_duration
-            for i in range(n):
-                t = t0 + i * dt_sample
-                if t < self.ramp_duration:
-                    env[i] = max(0.0, t / self.ramp_duration)
+        env = self._env_scratch
+        t0 = self.session_time - self.chunk_duration
+        t = t0 + np.arange(n, dtype=np.float64) / self.sample_rate
+
+        if self.session_time < self.ramp_duration or t0 < self.ramp_duration:
+            ramp_in = np.clip(t / self.ramp_duration, 0.0, 1.0)
+            env *= ramp_in.astype(np.float32)
 
         if self.session_duration != float('inf'):
-            for i in range(n):
-                t = self.session_time - self.chunk_duration + i * dt_sample
-                remaining = self.session_duration - t
-                if remaining < self.ramp_duration:
-                    env[i] *= max(0.0, remaining / self.ramp_duration)
+            remaining = self.session_duration - t
+            if np.any(remaining < self.ramp_duration):
+                ramp_out = np.clip(remaining / self.ramp_duration, 0.0, 1.0)
+                env *= ramp_out.astype(np.float32)
 
         return chunk * env[:, np.newaxis]
 

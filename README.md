@@ -22,14 +22,19 @@ ToneFlow is a desktop application for generating binaural and monaural beats wit
 - **Professional Effects Chain**: Schroeder reverb, pink/white noise masking
 - **Soft-Knee Limiter**: Prevents clipping while maintaining dynamic range
 
-### Evidence-Informed Presets
-6 presets based on EEG bands and research literature:
-- **Calm (Alpha, 10 Hz)** — Relaxation (evidence-informed)
-- **Meditate (Theta, 6 Hz)** — Deep relaxation (evidence-informed)
-- **Deep Work (Beta, 18 Hz)** — Alertness (evidence-informed)
-- **Focus (Gamma, 40 Hz)** — Peak cognitive (experimental)
-- **Schumann-style (7.83 Hz)** — Earth resonance (experimental)
-- **Intuition Boost (5 Hz, 528 Hz)** — User preference
+### Evidence-Informed & Color Vibration Presets
+Core EEG-band presets (research-aligned labels) plus a **Color** category of solfeggio/chakra vibration tones:
+
+**Brainwave / focus** (~46 presets across Calm · Deep · Focus · Color · Explore)
+- Alpha calm / ease / recovery / flow · Theta meditate / creative / nap / lucid
+- Delta deep sleep / drift-off · SMR · Study / Deep Work / Alert beta · Gamma 40 Hz
+- Schumann 7.83 Hz + H2 (14.3 Hz)
+
+**Color / vibration** (traditional wellness map — labeled user-preference, not clinical)
+- 111 · 136.1 (OM) · 174 · 285 · 396–963 solfeggio · 432 · 528 heart-alt
+- Each color preset drives matching on-screen colour aura + beat-band pairing
+
+Also: Hemi-Sync–style Focus 10/12/21, perception modes, monaural & isochronic variants.
 
 ### Real-Time Audio Monitoring
 - **Waveform Display**: 100ms oscilloscope showing L/R channels
@@ -38,10 +43,10 @@ ToneFlow is a desktop application for generating binaural and monaural beats wit
 - **Frequency Readouts**: Exact L/R carrier frequencies in binaural mode
 
 ### Visualization
-- **OpenGL 3D**: VBO-accelerated particle field (2000+ particles @ 60 FPS)
-- **2D Fallback**: Enhanced particles with trails, glow, and additive blending
-- **Audio-Reactive**: Pulse rate ↔ beat frequency, hue ↔ carrier frequency
-- **Dynamic Scaling**: Adjusts particle count to maintain performance
+- **Immersive 2D**: Mandala, beat ripples, orbital particles with trails, twinkling stars
+- **Color vibration aura**: Solfeggio/chakra presets tint glow, rings, and particles
+- **Audio-Reactive**: Pulse ↔ beat frequency, palette ↔ EEG band or preset colour
+- **OpenGL 3D** (optional): VBO particle field with carrier-hue mapping
 
 ### Safety & Quality
 - **SPL Safety Coach**: Conservative volume warnings (NIOSH/OSHA guidance)
@@ -216,26 +221,28 @@ toneflow/
 
 ## Performance
 
-- **Audio Latency**: Configurable buffer (512 frames default ≈11ms)
-- **Visual FPS**: Targets 60 FPS; auto-reduces particle count if <50 FPS
+- **Audio Latency**: Mixer buffer 4096 frames (~93 ms) for underrun safety; synthesis chunks 2048 (~46 ms)
+- **Visual FPS**: Targets 60 FPS
 - **Memory**: ~50-100 MB typical
-- **CPU**: Lightweight (Schroeder reverb, efficient oscillators)
+- **CPU**: Lightweight oscillators; reverb via SciPy (well under real-time)
 
 ## Troubleshooting
 
 ### Audio Issues
 
 **Clicks/Pops (should be rare with phase-continuous synthesis)**:
-- ToneFlow uses phase tracking and crossfading to eliminate clicks
+- ToneFlow uses per-sample phase integration and frequency ramping (no boundary clicks)
+- Mixer prefill + SciPy-backed reverb keep FX inside the real-time budget
 - If you still hear clicks:
-  - Increase buffer size in `app.py` line 40: `pygame.mixer.pre_init(44100, -16, 2, 1024)`
+  - Increase buffer size in `app.py`: `pygame.mixer.pre_init(44100, -16, 2, 4096)` (or `8192`)
   - Close other audio applications
   - Check CPU usage (high load can cause underruns)
 
 **Crackling/Distortion**:
-- Increase buffer size (see above)
+- Increase mixer buffer (see above)
 - Reduce particle count (lower visual load)
 - Check system audio latency settings
+- Soft limiter now clamps peaks instantly while releasing smoothly
 
 **No Sound**:
 - Check system audio output is not muted
@@ -248,10 +255,11 @@ toneflow/
 - Check system volume mixer
 
 **Audio Quality Improvements in Latest Version**:
-- Phase-continuous oscillators eliminate most boundary clicks
-- 10ms crossfading smooths chunk transitions
-- 40ms parameter slew prevents abrupt frequency jumps
-- Result: ~95% reduction in clicks/artifacts
+- Phase-continuous oscillators eliminate boundary clicks
+- Per-sample frequency ramps (no stepped warble)
+- SciPy IIR reverb (C-backed) — cave FX ~11 ms/chunk vs ~46 ms budget
+- Prefill + aggressive queue refill prevents mixer underruns
+- Instant-attack soft limiter stops clipping crackle
 
 ### Understanding the Audio Meters
 

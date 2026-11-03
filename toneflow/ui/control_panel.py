@@ -104,8 +104,12 @@ class ControlPanel:
     def _category_y(self) -> int:
         return 48
 
+    def _category_rows(self) -> int:
+        """Category chips wrap to 2 rows when the color tab is present."""
+        return 2 if len(PRESET_CATEGORIES) > 4 else 1
+
     def _preset_list_y(self) -> int:
-        return self._category_y() + 28
+        return self._category_y() + 4 + self._category_rows() * 22
 
     def _controls_y(self) -> int:
         return self._preset_list_y() + self.max_visible_presets * self.preset_row_h + 12
@@ -153,15 +157,9 @@ class ControlPanel:
         self.hover_preset_idx = None
         self.hover_category = None
 
-        cy = self._category_y()
-        x = 8
-        for cat in PRESET_CATEGORIES:
-            label = cat.capitalize()
-            tw = self.font_small.size(label)[0] + 10
-            rect = pygame.Rect(x, cy, tw, 20)
+        for rect, cat in self._iter_category_rects():
             if rect.collidepoint(mx, my):
                 self.hover_category = cat
-            x += tw + 4
 
         py = self._preset_list_y()
         for i in range(self.preset_scroll,
@@ -172,14 +170,24 @@ class ControlPanel:
             if row.collidepoint(mx, my):
                 self.hover_preset_idx = i
 
-    def _click(self, mx, my) -> dict:
-        # Category tabs
+    def _iter_category_rects(self):
+        """Yield (rect, cat) for wrapped category chips."""
         cy = self._category_y()
         x = 8
+        row = 0
         for cat in PRESET_CATEGORIES:
             label = cat.capitalize()
             tw = self.font_small.size(label)[0] + 10
-            rect = pygame.Rect(x, cy, tw, 20)
+            if x + tw > PANEL_WIDTH - 8 and x > 8:
+                row += 1
+                x = 8
+            rect = pygame.Rect(x, cy + row * 22, tw, 20)
+            yield rect, cat
+            x += tw + 4
+
+    def _click(self, mx, my) -> dict:
+        # Category tabs
+        for rect, cat in self._iter_category_rects():
             if rect.collidepoint(mx, my):
                 self.category = cat
                 self._apply_category_filter()
@@ -187,7 +195,6 @@ class ControlPanel:
                 if self.filtered_presets:
                     return {'select_preset_id': self.filtered_presets[idx]['id']}
                 return {}
-            x += tw + 4
 
         # Preset list
         py = self._preset_list_y()
@@ -266,13 +273,9 @@ class ControlPanel:
         surface.blit(self.font_title.render("ToneFlow", True, ACCENT), (12, 8))
         surface.blit(self.font_small.render("Perception Studio", True, TEXT_DIM), (12, 26))
 
-        # Category tabs
-        cy = self._category_y()
-        x = 8
-        for cat in PRESET_CATEGORIES:
+        # Category tabs (wrap to second row)
+        for rect, cat in self._iter_category_rects():
             label = cat.capitalize()
-            tw = self.font_small.size(label)[0] + 10
-            rect = pygame.Rect(x, cy, tw, 20)
             if cat == self.category:
                 pygame.draw.rect(surface, CAT_SEL, rect, border_radius=3)
             elif cat == self.hover_category:
@@ -281,7 +284,6 @@ class ControlPanel:
                 pygame.draw.rect(surface, BTN_BG, rect, border_radius=3)
             surface.blit(self.font_small.render(label, True, TEXT),
                          (rect.x + 5, rect.y + 3))
-            x += tw + 4
 
         # Presets
         py = self._preset_list_y()

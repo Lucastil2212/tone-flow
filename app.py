@@ -26,7 +26,8 @@ class ToneFlowApp:
         self.height = 720
         self.fps = 60
 
-        pygame.mixer.pre_init(44100, -16, 2, 2048)
+        # Larger mixer buffer reduces underrun crackling under FX/CPU load
+        pygame.mixer.pre_init(44100, -16, 2, 4096)
         pygame.init()
 
         self.screen = pygame.display.set_mode((self.width, self.height), pygame.RESIZABLE)
@@ -83,6 +84,12 @@ class ToneFlowApp:
         self.audio_engine.harmonic_phases = [0.0, 0.0, 0.0]
         self.audio_engine.set_perception_mode(preset.get('perception', 'standard'))
         self._perception_state_reset()
+
+        # Colour vibration override for solfeggio / chakra presets
+        colour = preset.get('colour')
+        self.audio_engine.set_colour(colour)
+        if hasattr(self.visualizer, 'set_colour_override'):
+            self.visualizer.set_colour_override(colour)
 
         rev = preset.get('reverb', 'off')
         self.reverb_preset = rev
@@ -175,6 +182,7 @@ class ToneFlowApp:
                 self.audio_engine.current_rms,
                 brainwave_state=self.audio_engine.get_brainwave_state(),
                 isochronic=self.audio_engine.isochronic_mode,
+                colour_override=self.audio_engine.colour_rgb,
             )
             self.render()
             pygame.display.flip()

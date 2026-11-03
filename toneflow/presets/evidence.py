@@ -28,7 +28,27 @@ EEG_BANDS = {
 SCHUMANN_FUNDAMENTAL_HZ = 7.83
 
 # Carriers sometimes marketed for wellness; no entrainment evidence for these values.
-AESTHETIC_CARRIERS = {396.0, 432.0, 528.0}
+# Solfeggio / chakra tradition frequencies (aesthetic / exploratory only).
+AESTHETIC_CARRIERS = {
+    111.0, 136.1, 174.0, 285.0, 396.0, 417.0, 432.0,
+    528.0, 639.0, 741.0, 852.0, 963.0,
+}
+
+# Traditional colour associations for solfeggio / chakra maps (not clinical).
+COLOR_VIBRATION_MAP = {
+    111.0: ('Bronze', (180, 140, 80)),
+    136.1: ('Teal', (80, 160, 140)),
+    174.0: ('Earth', (160, 60, 40)),
+    285.0: ('Amber', (200, 100, 60)),
+    396.0: ('Red', (220, 40, 40)),
+    417.0: ('Orange', (255, 120, 30)),
+    432.0: ('Sky', (100, 180, 220)),
+    528.0: ('Yellow', (240, 210, 40)),
+    639.0: ('Green', (40, 200, 100)),
+    741.0: ('Blue', (40, 140, 255)),
+    852.0: ('Indigo', (90, 60, 220)),
+    963.0: ('Violet', (180, 120, 255)),
+}
 
 
 def band_for_beat(beat_hz: float) -> Optional[str]:
